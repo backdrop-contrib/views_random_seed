@@ -43,35 +43,25 @@ class views_random_seed_handler_sort_random extends views_handler_sort {
       '#description' => t('Define your own custom reset time, must be a number. Choose custom in the options above.'),
     );
 
-    // Caching strategy.
-    /*$caching = array(
-      CACHE_DISABLED => t('Disabled'),
-      CACHE_NORMAL => t('Normal (recommended for production sites, no side effects)'),
-      CACHE_AGGRESSIVE => t('Aggressive (experts only, possible side effects)')
+    // Caching strategy info.
+    $form['cache_strategy'] = array(
+      '#type' => 'item',
+      '#title' => t('Cache exclude'),
+      '#description' => t('If you enable page caching, anonymous users might get duplicate items depending on their seed and which pages are allready cached by Drupal. If you wish to exclude paths from getting cached for anonymous users, install <a href="!url" target="_blank">Cache exclude</a>.', array('!url' => 'http://drupal.org/project/cacheexclude')),
     );
-    $form['anon_clear_cache'] = array(
-      '#type' => 'radios',
-      '#title' => t('Caching strategy when page cache is enabled'),
-      '#options' => array(
-        'no' => t('Let drupal page caching do its work for anonymous users'),
-        'yes' => t('Do not cache pages for anonymous users'),
-      ),
-      '#description' => t('Current cache mode: @cache<br />Warning: choosing to not cache pages for anonymous users might have a big influence on performance for your site.', array('@cache' => $caching[variable_get('cache', CACHE_DISABLED)])),
-      '#default_value' => isset($this->options['anon_clear_cache']) ? $this->options['anon_clear_cache'] : 'no',
-    );*/
   }
 
   // Perform query.
   function query() {
     global $db_type;
-    $seed = views_random_seed_calculate_seed($this->options, $this->view->name, $this->view->current_display);
+    $seed = views_random_seed_calculate_seed($this->options, $this->view->name, $this->view->current_display, $db_type);
     switch ($db_type) {
       case 'mysql':
       case 'mysqli':
         $formula = 'RAND('. $seed .')';
         break;
       case 'pgsql':
-        $formula = 'RANDOM('. $seed .')';
+        $formula = 'RANDOM()';
         break;
     }
     $this->query->add_orderby(NULL, $formula, $this->options['order'], '_' . $this->field);
@@ -84,10 +74,11 @@ class views_random_seed_handler_sort_random extends views_handler_sort {
  * @param array $options The options for the random seed handler.
  * @param string $view_name The name of the view.
  * @param string $display The current display.
+ * @param string $db_type the current database type (mysql(i) - pgsql)
  *
  * @return int $seed Seed value which is a timestamp.
  */
-function views_random_seed_calculate_seed($options, $view_name, $display) {
+function views_random_seed_calculate_seed($options, $view_name, $display, $db_type) {
   $time = time();
   $seed_name = 'views_seed_name-'. $view_name .'-'. $display;
   $seed_time = 'views_seed_time-'. $view_name .'-'. $display;
@@ -95,14 +86,15 @@ function views_random_seed_calculate_seed($options, $view_name, $display) {
 
   // Create a first seed if necessary.
   if ($seed == FALSE) {
-    $seed = _views_random_seed_generate_seed($options['user_seed_type'], $seed_name, $seed_time, $time);
+    $seed = _views_random_seed_generate_seed($options['user_seed_type'], $seed_name, $seed_time, $time, $db_type);
   }
 
   // Reset seed or not ?
   if ($options['reset_seed_int'] != 'never') {
     $reset_time = $options['reset_seed_int'] == 'custom' ? $options['reset_seed_custom'] : $options['reset_seed_int'];
     if (($_SESSION[$seed_time] + $reset_time) < $time) {
-      $seed = _views_random_seed_generate_seed($options['user_seed_type'], $seed_name, $seed_time, $time);
+      variable_del($seed_name);
+      $seed = _views_random_seed_generate_seed($options['user_seed_type'], $seed_name, $seed_time, $time, $db_type);
     }
   }
 
@@ -117,24 +109,51 @@ function views_random_seed_calculate_seed($options, $view_name, $display) {
  * @param string $seed_name Name of the seed.
  * @param string $seed_time Time of the seed.
  * @param int $time Current timestamp.
+ * @param string $db_type the current database type (mysql(i) - pgsql)
  *
- * @return int seed value which is a timestamp.
+ * @return int seed value.
  */
-function _views_random_seed_generate_seed($user_seed_type, $seed_name, $seed_time, $time) {
+function _views_random_seed_generate_seed($user_seed_type, $seed_name, $seed_time, $time, $db_type) {
 
   // Different per user, simply return $time.
   if ($user_seed_type == 'diff_per_user') {
-    $seed = $time;
+    $seed = _views_random_seed_create_int($time, $db_type);
   }
   else {
     // Same for al users, get a stored variable.
     $seed = variable_get($seed_name, FALSE);
     if ($seed == FALSE) {
-      $seed = variable_set($seed_name, $time);
+      $seed = _views_random_seed_create_int($time, $db_type);
+      variable_set($seed_name, $seed);
     }
   }
 
   $_SESSION[$seed_time] = $time;
   $_SESSION[$seed_name] = $seed;
   return $seed;
+}
+
+/**
+ * Helper function to create a seed based on db_type. MySQL can
+ * handle any integer in the RAND() function. For PgSQL we'll
+ * run an extra query with a integer between 0 and 1 which
+ * will be used by the RANDOM() function.
+ *
+ * @param int $time Current timestamp.
+ * @param string $db_type the current database type (mysql(i) - pgsql)
+ *
+ * @return int $seed timestamp or int between 0 and 1.
+ */
+function _views_random_seed_create_int($time, $db_type) {
+  switch ($db_type) {
+    case 'mysql':
+    case 'mysqli':
+      return $time;
+      break;
+    case 'pgsql':
+      $seed = $time / 10000000000;
+      db_query('select setseed('. $seed .')');
+      return $seed;
+    	break;
+  }
 }
