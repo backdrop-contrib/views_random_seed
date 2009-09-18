@@ -61,6 +61,10 @@ class views_random_seed_handler_sort_random extends views_handler_sort {
         $formula = 'RAND('. $seed .')';
         break;
       case 'pgsql':
+        // For PgSQL we'll run an extra query with a integer between
+        // 0 and 1 which will be used by the RANDOM() function.
+        db_query('select setseed('. $seed .')');
+        $res = db_result(db_query("select random()"));
         $formula = 'RANDOM()';
         break;
     }
@@ -135,9 +139,8 @@ function _views_random_seed_generate_seed($user_seed_type, $seed_name, $seed_tim
 
 /**
  * Helper function to create a seed based on db_type. MySQL can
- * handle any integer in the RAND() function. For PgSQL we'll
- * run an extra query with a integer between 0 and 1 which
- * will be used by the RANDOM() function.
+ * handle any integer in the RAND() function, Postgres needs
+ * an int between 0 and 1.
  *
  * @param int $time Current timestamp.
  * @param string $db_type the current database type (mysql(i) - pgsql)
@@ -152,7 +155,6 @@ function _views_random_seed_create_int($time, $db_type) {
       break;
     case 'pgsql':
       $seed = $time / 10000000000;
-      db_query('select setseed('. $seed .')');
       return $seed;
     	break;
   }
