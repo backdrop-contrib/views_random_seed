@@ -40,7 +40,7 @@ class views_random_seed_handler_sort_random extends views_handler_sort {
       '#title' => t('Custom reset seed'),
       '#required' => TRUE,
       '#default_value' => isset($this->options['reset_seed_custom']) ? $this->options['reset_seed_custom'] : '300',
-      '#description' => t('Define your own custom reset time, must be a number. Choose custom in the options above.'),
+      '#description' => t('Define your own custom reset time, must be a number and is in seconds. Choose custom in the options above.'),
     );
 
     // Caching strategy info.
