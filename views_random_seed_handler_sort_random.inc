@@ -2,9 +2,24 @@
 // $Id$
 
 /**
+ * @file
+ * Views random seed order class.
+ */
+
+/**
  * Handle a random sort with seed.
  */
 class views_random_seed_handler_sort_random extends views_handler_sort {
+
+  function option_definition() {
+    $options = parent::option_definition();
+
+    $options['user_seed_type'] = array('default' => 'same_per_user');
+    $options['reset_seed_int'] = array('default' => '3600');
+    $options['reset_seed_custom'] = array('default' => '300');
+
+    return $options;
+  }
 
   // Options form.
   function options_form(&$form, &$form_state) {
@@ -53,22 +68,24 @@ class views_random_seed_handler_sort_random extends views_handler_sort {
 
   // Perform query.
   function query() {
-    global $db_type;
+    $db_type = db_driver();
     $seed = views_random_seed_calculate_seed($this->options, $this->view->name, $this->view->current_display, $db_type);
     switch ($db_type) {
       case 'mysql':
       case 'mysqli':
-        $formula = 'RAND('. $seed .')';
+        $formula = 'RAND(' . $seed . ')';
         break;
       case 'pgsql':
         // For PgSQL we'll run an extra query with a integer between
         // 0 and 1 which will be used by the RANDOM() function.
-        db_query('select setseed('. $seed .')');
-        $res = db_result(db_query("select random()"));
+        db_query('select setseed(' . $seed . ')');
+        db_query("select random()");
         $formula = 'RANDOM()';
         break;
     }
-    $this->query->add_orderby(NULL, $formula, $this->options['order'], '_' . $this->field);
+    if (!empty($formula)) {
+      $this->query->add_orderby(NULL, $formula, $this->options['order'], '_' . $this->field);
+    }
   }
 }
 
@@ -83,9 +100,9 @@ class views_random_seed_handler_sort_random extends views_handler_sort {
  * @return int $seed Seed value which is a timestamp.
  */
 function views_random_seed_calculate_seed($options, $view_name, $display, $db_type) {
-  $time = time();
-  $seed_name = 'views_seed_name-'. $view_name .'-'. $display;
-  $seed_time = 'views_seed_time-'. $view_name .'-'. $display;
+  $time = REQUEST_TIME;
+  $seed_name = 'views_seed_name-' . $view_name . '-' . $display;
+  $seed_time = 'views_seed_time-' . $view_name . '-' . $display;
   $seed = isset($_SESSION[$seed_name]) ? $_SESSION[$seed_name] : FALSE;
 
   // Create a first seed if necessary.
@@ -156,6 +173,6 @@ function _views_random_seed_create_int($time, $db_type) {
     case 'pgsql':
       $seed = $time / 10000000000;
       return $seed;
-    	break;
+      break;
   }
 }
