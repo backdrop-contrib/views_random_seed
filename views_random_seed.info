@@ -2,5 +2,8 @@
 name = Views random seed
 description = "Adds a random order handler with seed so random order listings with paging works."
 package = Views
-core = 6.x
+core = 7.x
 dependencies[] = views
+files[] = views_random_seed.module
+files[] = views_random_seed.install
+files[] = views_random_seed_handler_sort_random.inc

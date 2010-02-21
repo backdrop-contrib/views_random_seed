@@ -2,9 +2,11 @@
 // $Id$
 
 /**
- * Implementation of hook_uninstall().
+ * Implements hook_uninstall().
  */
 function views_random_seed_uninstall() {
-  db_query("DELETE FROM {variable} WHERE name LIKE 'views_seed%%'");
-  cache_clear_all('variables', 'cache');  
+  db_delete('variable')
+    ->condition('name', 'views_seed%', 'LIKE')
+    ->execute();
+  cache_clear_all('variables', 'cache');
 }
