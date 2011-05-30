@@ -32,6 +32,7 @@ class views_random_seed_handler_sort_random extends views_handler_sort {
       '#options' => array(
         'same_per_user' => t('Use the same seed for every user'),
         'diff_per_user' => t('Use a different seed per user'),
+        'custom' => t('Use custom PHP code')
       ),
       '#default_value' => isset($this->options['user_seed_type']) ? $this->options['user_seed_type'] : 'same_per_user',
     );
@@ -57,12 +58,21 @@ class views_random_seed_handler_sort_random extends views_handler_sort {
       '#description' => t('Define your own custom reset time, must be a number and is in seconds. Choose custom in the options above.'),
     );
 
+    // Custom seed textarea.
+    $form['custom_seed'] = array(
+      '#type' => 'textarea',
+      '#title' => t('Custom PHP code'),
+      '#description' => t('PHP code, must return a string. Do not include <?php and ?> tags, this is passed through <code>eval()</code>.'),
+      '#default_value' => isset($this->options['custom_seed']) ? $this->options['custom_seed'] : NULL,
+    );
+
     // Caching strategy info.
     $form['cache_strategy'] = array(
       '#type' => 'item',
       '#title' => t('Cache exclude'),
       '#description' => t('If you enable page caching, anonymous users might get duplicate items depending on their seed and which pages are allready cached by Drupal. If you wish to exclude paths from getting cached for anonymous users, install <a href="!url" target="_blank">Cache exclude</a>.', array('!url' => 'http://drupal.org/project/cacheexclude')),
     );
+
   }
 
   // Perform query.
@@ -103,6 +113,11 @@ function views_random_seed_calculate_seed($options, $view_name, $display, $db_ty
   $seed_name = 'views_seed_name-' . $view_name . '-' . $display;
   $seed_time = 'views_seed_time-' . $view_name . '-' . $display;
   $seed = isset($_SESSION[$seed_name]) ? $_SESSION[$seed_name] : FALSE;
+
+  if ($options['user_seed_type'] == 'custom') {
+    $seed = eval($options['custom_seed']);
+    return (int) $seed;
+  }
 
   // Create a first seed if necessary.
   if ($seed == FALSE) {
@@ -175,3 +190,4 @@ function _views_random_seed_create_int($time, $db_type) {
       break;
   }
 }
+
