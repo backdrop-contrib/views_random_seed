@@ -16,6 +16,7 @@ class views_random_seed_handler_sort_random extends views_handler_sort {
     $options['user_seed_type'] = array('default' => 'same_per_user');
     $options['reset_seed_int'] = array('default' => '3600');
     $options['reset_seed_custom'] = array('default' => '300');
+    $options['custom_seed'] = array('default' => '');
 
     return $options;
   }
