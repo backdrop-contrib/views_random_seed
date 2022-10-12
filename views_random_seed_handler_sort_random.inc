@@ -10,12 +10,17 @@
  */
 class views_random_seed_handler_sort_random extends views_handler_sort {
 
+  function can_expose() {
+    return FALSE;
+  }
+
   function option_definition() {
     $options = parent::option_definition();
 
     $options['user_seed_type'] = array('default' => 'same_per_user');
     $options['reset_seed_int'] = array('default' => '3600');
     $options['reset_seed_custom'] = array('default' => '300');
+    $options['shared_seed'] = array('default' => '0');
     $options['custom_seed'] = array('default' => '');
 
     return $options;
@@ -33,7 +38,6 @@ class views_random_seed_handler_sort_random extends views_handler_sort {
       '#options' => array(
         'same_per_user' => t('Use the same seed for every user'),
         'diff_per_user' => t('Use a different seed per user'),
-        'custom' => t('Use custom PHP code')
       ),
       '#default_value' => isset($this->options['user_seed_type']) ? $this->options['user_seed_type'] : 'same_per_user',
     );
@@ -41,45 +45,44 @@ class views_random_seed_handler_sort_random extends views_handler_sort {
     // User seed type.
     $form['reset_seed_int'] = array(
       '#type' => 'radios',
-      '#title' => t('Reset seed'),
+      '#title' => t('Reset seed interval'),
       '#options' => array(
         'never' => t('Never'),
-        'custom' => t('Custom'),
         '3600' => t('Every hour'),
         '28800' => t('Every day'),
+        'custom' => t('Custom'),
       ),
       '#default_value' => isset($this->options['reset_seed_int']) ? $this->options['reset_seed_int'] : '3600',
     );
     $form['reset_seed_custom'] = array(
-      '#type' => 'textfield',
+      '#type' => 'number',
       '#size' => 10,
-      '#title' => t('Custom reset seed'),
-      '#required' => TRUE,
+      '#step' => 1,
+      '#title' => t('Custom reset length'),
       '#default_value' => isset($this->options['reset_seed_custom']) ? $this->options['reset_seed_custom'] : '300',
       '#description' => t('Define your own custom reset time, must be a number and is in seconds. Choose custom in the options above.'),
+      '#states' => array(
+        'visible' => array(
+          '[name="options[reset_seed_int]"]' => array('value' => 'custom'),
+        ),
+      ),
     );
-
-    // Custom seed textarea.
-    $form['custom_seed'] = array(
-      '#type' => 'textarea',
-      '#title' => t('Custom PHP code'),
-      '#description' => t('PHP code, must return a string. Do not include <?php and ?> tags, this is passed through <code>eval()</code>.'),
-      '#default_value' => isset($this->options['custom_seed']) ? $this->options['custom_seed'] : NULL,
+    $form['shared_seed'] = array(
+      '#type' => 'radios',
+      '#title' => t('Per-display seeds'),
+      '#options' => array(
+        '0' => t('Each display uses a separate seed'),
+        '1' => t('All displays in this view share the same seed'),
+      ),
+      '#default_value' => isset($this->options['shared_seed']) ? $this->options['shared_seed'] : '0',
+      '#description' => t('Share the same seed across displays if needing to maintain the same random order between displays and prevent duplicates.'),
     );
-
-    // Caching strategy info.
-    $form['cache_strategy'] = array(
-      '#type' => 'item',
-      '#title' => t('Cache exclude'),
-      '#description' => t('If you enable page caching, anonymous users might get duplicate items depending on their seed and which pages are allready cached by Drupal. If you wish to exclude paths from getting cached for anonymous users, install <a href="!url" target="_blank">Cache exclude</a>.', array('!url' => 'http://drupal.org/project/cacheexclude')),
-    );
-
   }
 
   // Perform query.
   function query() {
     $db_type = db_driver();
-    $seed = views_random_seed_calculate_seed($this->options, $this->view->name, $this->view->current_display, $db_type);
+    $seed = views_random_seed_calculate_seed($this->view->name, $this->view->current_display, $this->options);
     switch ($db_type) {
       case 'mysql':
       case 'mysqli':
@@ -102,36 +105,52 @@ class views_random_seed_handler_sort_random extends views_handler_sort {
 /**
  * Calculate a seed.
  *
- * @param array $options The options for the random seed handler.
- * @param string $view_name The name of the view.
- * @param string $display The current display.
- * @param string $db_type the current database type (mysql(i) - pgsql)
+ * @param string $view_name
+ *   The name of the view.
+ * @param string $display_name
+ *   The current display name.
+ * @param array $options
+ *   The options for the random seed handler.
  *
- * @return int $seed Seed value which is a timestamp.
+ * @return int
+ *   Seed value which is a timestamp.
  */
-function views_random_seed_calculate_seed($options, $view_name, $display, $db_type) {
+function views_random_seed_calculate_seed($view_name, $display_name, $options) {
   $time = REQUEST_TIME;
-  $seed_name = 'views_seed_name-' . $view_name . '-' . $display;
-  $seed_time = 'views_seed_time-' . $view_name . '-' . $display;
-  $seed = isset($_SESSION[$seed_name]) ? $_SESSION[$seed_name] : FALSE;
+  $seed = NULL;
 
-  if ($options['user_seed_type'] == 'custom') {
-    $seed = eval($options['custom_seed']);
-    return (int) $seed;
+  if ($options['shared_seed']) {
+    $seed_name = $view_name;
+  }
+  else {
+    $seed_name = $view_name . '-' . $display_name;
   }
 
-  // Create a first seed if necessary.
-  if ($seed == FALSE) {
-    $seed = _views_random_seed_generate_seed($options['user_seed_type'], $seed_name, $seed_time, $time, $db_type);
+  // Check if any modules want to generate a seed.
+  foreach (module_implements('views_random_seed_calculate') as $module) {
+    $module_seed = module_invoke($module, 'views_random_seed_calculate', $seed_name, $view_name, $display_name, $options);
+    if ($module_seed) {
+      $seed = $module_seed;
+    }
   }
 
-  // Reset seed or not ?
+  if (!$seed) {
+    $seed = _views_random_seed_generate_seed($seed_name, $time);
+  }
+
+  // Reset seed or not?
   if ($options['reset_seed_int'] != 'never') {
     $reset_time = $options['reset_seed_int'] == 'custom' ? $options['reset_seed_custom'] : $options['reset_seed_int'];
-    if (($_SESSION[$seed_time] + $reset_time) < $time) {
-      variable_del($seed_name);
-      $seed = _views_random_seed_generate_seed($options['user_seed_type'], $seed_name, $seed_time, $time, $db_type);
+    $seed_time = _views_random_seed_get_time($seed_name);
+    if (($seed_time + $reset_time) < $time) {
+      _views_random_seed_del_seed($seed_name);
+      $seed = _views_random_seed_generate_seed($seed_name, $time);
     }
+  }
+
+  // Adjust the seed based on UID if different per user.
+  if ($options['user_seed_type'] === 'diff_per_user') {
+    $seed += _views_random_seed_create_int($GLOBALS['user']->uid);
   }
 
   // Return seed.
@@ -141,31 +160,20 @@ function views_random_seed_calculate_seed($options, $view_name, $display, $db_ty
 /**
  * Helper function to generate a seed
  *
- * @param string $user_seed_type Type of user seed.
- * @param string $seed_name Name of the seed.
- * @param string $seed_time Time of the seed.
- * @param int $time Current timestamp.
- * @param string $db_type the current database type (mysql(i) - pgsql)
+ * @param string $seed_name
+ *   Name of the seed.
+ * @param int $time
+ *   Current timestamp.
  *
  * @return int seed value.
  */
-function _views_random_seed_generate_seed($user_seed_type, $seed_name, $seed_time, $time, $db_type) {
-
-  // Different per user, simply return $time.
-  if ($user_seed_type == 'diff_per_user') {
-    $seed = _views_random_seed_create_int($time, $db_type);
-  }
-  else {
-    // Same for al users, get a stored variable.
-    $seed = variable_get($seed_name, FALSE);
-    if ($seed == FALSE) {
-      $seed = _views_random_seed_create_int($time, $db_type);
-      variable_set($seed_name, $seed);
-    }
+function _views_random_seed_generate_seed($seed_name, $time) {
+  $seed = _views_random_seed_get_seed($seed_name);
+  if ($seed == FALSE) {
+    $seed = _views_random_seed_create_int($time);
+    _views_random_seed_set_seed($seed_name, $seed);
   }
 
-  $_SESSION[$seed_time] = $time;
-  $_SESSION[$seed_name] = $seed;
   return $seed;
 }
 
@@ -174,12 +182,14 @@ function _views_random_seed_generate_seed($user_seed_type, $seed_name, $seed_tim
  * handle any integer in the RAND() function, Postgres needs
  * an int between 0 and 1.
  *
- * @param int $time Current timestamp.
- * @param string $db_type the current database type (mysql(i) - pgsql)
+ * @param int $time
+ *   Current timestamp.
  *
- * @return int $seed timestamp or int between 0 and 1.
+ * @return int
+ *   Timestamp or int between 0 and 1.
  */
-function _views_random_seed_create_int($time, $db_type) {
+function _views_random_seed_create_int($time) {
+  $db_type = db_driver();
   switch ($db_type) {
     case 'mysql':
     case 'mysqli':
@@ -192,3 +202,47 @@ function _views_random_seed_create_int($time, $db_type) {
   }
 }
 
+/**
+ * Save a seed for persisting across requests.
+ */
+function _views_random_seed_set_seed($seed_name, $value) {
+  $seeds = state_get('views_random_seeds', array());
+  $seeds[$seed_name] = array(
+    'seed' => $value,
+    'time' => REQUEST_TIME,
+  );
+  state_set('views_random_seeds', $seeds);
+}
+
+/**
+ * Delete a saved seed.
+ */
+function _views_random_seed_del_seed($seed_name = NULL) {
+  $seeds = state_get('views_random_seeds', array());
+  if (isset($seeds[$seed_name])) {
+    unset($seeds[$seed_name]);
+    state_set('views_random_seeds', $seeds);
+  }
+}
+
+/**
+ * Get a seed's value by its name.
+ */
+function _views_random_seed_get_seed($seed_name) {
+  $seeds = state_get('views_random_seeds', array());
+  if (isset($seeds[$seed_name])) {
+    return $seeds[$seed_name]['seed'];
+  }
+  return FALSE;
+}
+
+/**
+ * Get a seed's generation time by its name.
+ */
+function _views_random_seed_get_time($seed_name) {
+  $seeds = state_get('views_random_seeds', array());
+  if (isset($seeds[$seed_name])) {
+    return $seeds[$seed_name]['time'];
+  }
+  return FALSE;
+}

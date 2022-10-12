@@ -9,8 +9,18 @@
  * Implements hook_uninstall().
  */
 function views_random_seed_uninstall() {
-  db_delete('variable')
-    ->condition('name', 'views_seed%', 'LIKE')
-    ->execute();
-  cache_clear_all('variables', 'cache');
+  state_del('views_random_seeds');
+}
+
+/**
+ * Clean up old Views Random Seed variables.
+ */
+function views_random_seed_update_1000() {
+  // Delete all previous seeds that were in the variable table. These can be
+  // regenerated into the state table in Backdrop.
+  if (db_table_exists('variable')) {
+    db_delete('variable')
+      ->condition('name', 'views_seed%', 'LIKE')
+      ->execute();
+  }
 }

@@ -18,7 +18,7 @@
 function views_random_seed_views_data() {
   $data['views']['random_seed'] = array(
     'title' => t('Random seed'),
-    'help' => t('Randomize the display order with a seed which makes paging possible.'),
+    'help' => t('Randomize items based on a consistent key, keeping the same random order for a set period of time.'),
     'sort' => array(
       'handler' => 'views_random_seed_handler_sort_random',
     ),
@@ -33,7 +33,7 @@ function views_random_seed_views_data() {
 function views_random_seed_views_handlers() {
   return array(
     'info' => array(
-      'path' => drupal_get_path('module', 'views_random_seed'),
+      'path' => backdrop_get_path('module', 'views_random_seed'),
     ),
     'handlers' => array(
       'views_random_seed_handler_sort_random' => array(
@@ -41,4 +41,22 @@ function views_random_seed_views_handlers() {
       )
     )
   );
+}
+
+/**
+ * Implements hook_autoload_info().
+ */
+function views_random_seed_autoload_info() {
+  return array(
+    'views_random_seed_handler_sort_random' => 'views_random_seed_handler_sort_random.inc',
+  );
+}
+
+/**
+ * Implements hook_views_invalidate_cache().
+ */
+function views_random_seed_views_invalidate_cache() {
+  // Clear all seeds when invalidating Views cache. This happens on save of
+  // any view and on menu rebuilds.
+  state_del('views_random_seeds');
 }
