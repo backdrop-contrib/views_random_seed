@@ -129,7 +129,7 @@ function views_random_seed_calculate_seed($view_name, $display_name, $options) {
   // Check if any modules want to generate a seed.
   foreach (module_implements('views_random_seed_calculate') as $module) {
     $module_seed = module_invoke($module, 'views_random_seed_calculate', $seed_name, $view_name, $display_name, $options);
-    if ($module_seed) {
+    if (isset($module_seed)) {
       $seed = $module_seed;
     }
   }
@@ -139,7 +139,7 @@ function views_random_seed_calculate_seed($view_name, $display_name, $options) {
   }
 
   // Reset seed or not?
-  if ($options['reset_seed_int'] != 'never') {
+  if (!isset($module_seed) && $options['reset_seed_int'] != 'never') {
     $reset_time = $options['reset_seed_int'] == 'custom' ? $options['reset_seed_custom'] : $options['reset_seed_int'];
     $seed_time = _views_random_seed_get_time($seed_name);
     if (($seed_time + $reset_time) < $time) {
